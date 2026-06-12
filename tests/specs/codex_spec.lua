@@ -24,6 +24,8 @@ describe('codex.nvim', function()
     local cmds = vim.api.nvim_get_commands {}
     assert(cmds['Codex'], 'Codex command not found')
     assert(cmds['CodexToggle'], 'CodexToggle command not found')
+    assert(cmds['CodexSidebar'], 'CodexSidebar command not found')
+    assert(cmds['CodexFloat'], 'CodexFloat command not found')
   end)
 
   it('opens a floating terminal window', function()
@@ -54,6 +56,45 @@ describe('codex.nvim', function()
 
     local ok, _ = pcall(vim.api.nvim_win_get_buf, win1)
     assert(not ok, 'Codex window should be closed')
+  end)
+
+  it('switches layouts without starting a new session', function()
+    local original_fn = vim.fn
+    local termopen_calls = 0
+
+    vim.fn = setmetatable({
+      termopen = function()
+        termopen_calls = termopen_calls + 1
+        return 123
+      end,
+    }, { __index = original_fn })
+
+    package.loaded['codex'] = nil
+    package.loaded['codex.state'] = nil
+    local codex = require 'codex'
+    local state = require 'codex.state'
+
+    codex.setup { cmd = { 'echo', 'test' } }
+
+    codex.open { panel = true }
+    local panel_win = state.win
+    local panel_buf = state.buf
+
+    assert(vim.api.nvim_win_is_valid(panel_win), 'Codex side-panel should be open')
+    eq(state.layout, true)
+
+    codex.open { panel = false }
+
+    assert(not vim.api.nvim_win_is_valid(panel_win), 'Codex side-panel should be closed')
+    assert(vim.api.nvim_win_is_valid(state.win), 'Codex float should be open')
+    eq(state.layout, false)
+    eq(state.buf, panel_buf)
+    eq(termopen_calls, 1)
+
+    codex.close()
+    state.job = nil
+    state.buf = nil
+    vim.fn = original_fn
   end)
 
   it('shows statusline only when job is active but window is not', function()

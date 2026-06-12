@@ -29,9 +29,9 @@ export OPENAI_API_KEY=your_api_key
 
 ```lua
 return {
-  'kkrampis/codex.nvim',
+  'johnseth97/codex.nvim',
   lazy = true,
-  cmd = { 'Codex', 'CodexToggle' }, -- Optional: Load only on command execution
+  cmd = { 'Codex', 'CodexToggle', 'CodexSidebar', 'CodexFloat' }, -- Optional: Load only on command execution
   keys = {
     {
       '<leader>cc', -- Change this to your preferred keybinding
@@ -39,10 +39,24 @@ return {
       desc = 'Toggle Codex popup or side-panel',
       mode = { 'n', 't' }
     },
+    {
+      '<leader>cs',
+      function() require('codex').open { panel = true, width = 0.2, height = 1.0 } end,
+      desc = 'Open Codex side-panel',
+      mode = { 'n', 't' }
+    },
+    {
+      '<leader>cf',
+      function() require('codex').open { panel = false, width = 0.8, height = 0.8 } end,
+      desc = 'Open Codex floating popup',
+      mode = { 'n', 't' }
+    },
   },
   opts = {
     keymaps     = {
       toggle = nil, -- Keybind to toggle Codex window (Disabled by default, watch out for conflicts)
+      sidebar = nil, -- Keybind to open Codex side-panel
+      float = nil, -- Keybind to open Codex floating popup
       quit = '<C-q>', -- Keybind to close the Codex window (default: Ctrl + q)
     },         -- Disable internal default keymap (<leader>cc -> :CodexToggle)
     border      = 'rounded',  -- Options: 'single', 'double', or 'rounded'
@@ -53,12 +67,15 @@ return {
     panel       = false,      -- Open Codex in a side-panel (vertical split) instead of floating window
     use_buffer  = false,      -- Capture Codex stdout into a normal buffer instead of a terminal buffer
   },
-}```
+}
+```
 
 ### Usage:
 - Call `:Codex` (or `:CodexToggle`) to open or close the Codex popup or side-panel.
-- Map your own keybindings via the `keymaps.toggle` setting.
+- Call `:CodexSidebar` or `:CodexFloat` to open a specific layout while reusing the same Codex session.
+- Map your own keybindings via the `keymaps.toggle`, `keymaps.sidebar`, and `keymaps.float` settings.
 - To choose floating popup vs side-panel, set `panel = false` (popup) or `panel = true` (panel) in your setup options.
+- To switch layouts from Lua without rerunning setup, call `require('codex').open { panel = true }` for the side-panel or `require('codex').open { panel = false }` for the floating popup. You can also pass per-open `width`, `height`, or `border` values.
 - To capture Codex output in an editable buffer instead of a terminal, set `use_buffer = true` (or `false` to keep terminal) in your setup options.
 - Add the following code to show backgrounded Codex window in lualine:
 

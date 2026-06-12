@@ -7,6 +7,8 @@ local M = {}
 local config = {
   keymaps = {
     toggle = nil,
+    sidebar = nil,
+    float = nil,
     quit = '<C-q>', -- Default: Ctrl+q to quit
   },
   border = 'single',
@@ -15,9 +17,37 @@ local config = {
   cmd = 'codex',
   model = nil, -- Default to the latest model
   autoinstall = true,
-  panel     = false,   -- if true, open Codex in a side-panel instead of floating window
+  panel = false,       -- if true, open Codex in a side-panel instead of floating window
   use_buffer = false,  -- if true, capture Codex stdout into a normal buffer instead of a terminal
 }
+
+local function resolve_open_opts(opts)
+  local open_opts = {}
+
+  if type(opts) == 'boolean' then
+    open_opts.panel = opts
+  elseif type(opts) == 'table' then
+    open_opts = vim.deepcopy(opts)
+  end
+
+  if open_opts.panel == nil then
+    open_opts.panel = config.panel
+  end
+
+  if open_opts.width == nil then
+    open_opts.width = config.width
+  end
+
+  if open_opts.height == nil then
+    open_opts.height = config.height
+  end
+
+  if open_opts.border == nil then
+    open_opts.border = config.border
+  end
+
+  return open_opts
+end
 
 function M.setup(user_config)
   config = vim.tbl_deep_extend('force', config, user_config or {})
@@ -30,14 +60,30 @@ function M.setup(user_config)
     M.toggle()
   end, { desc = 'Toggle Codex popup (alias)' })
 
+  vim.api.nvim_create_user_command('CodexSidebar', function()
+    M.open { panel = true }
+  end, { desc = 'Open Codex side-panel' })
+
+  vim.api.nvim_create_user_command('CodexFloat', function()
+    M.open { panel = false }
+  end, { desc = 'Open Codex floating popup' })
+
   if config.keymaps.toggle then
     vim.api.nvim_set_keymap('n', config.keymaps.toggle, '<cmd>CodexToggle<CR>', { noremap = true, silent = true })
   end
+
+  if config.keymaps.sidebar then
+    vim.api.nvim_set_keymap('n', config.keymaps.sidebar, '<cmd>CodexSidebar<CR>', { noremap = true, silent = true })
+  end
+
+  if config.keymaps.float then
+    vim.api.nvim_set_keymap('n', config.keymaps.float, '<cmd>CodexFloat<CR>', { noremap = true, silent = true })
+  end
 end
 
-local function open_window()
-  local width = math.floor(vim.o.columns * config.width)
-  local height = math.floor(vim.o.lines * config.height)
+local function open_window(open_opts)
+  local width = math.floor(vim.o.columns * open_opts.width)
+  local height = math.floor(vim.o.lines * open_opts.height)
   local row = math.floor((vim.o.lines - height) / 2)
   local col = math.floor((vim.o.columns - width) / 2)
 
@@ -75,7 +121,7 @@ local function open_window()
     none = nil,
   }
 
-  local border = type(config.border) == 'string' and styles[config.border] or config.border
+  local border = type(open_opts.border) == 'string' and styles[open_opts.border] or open_opts.border
 
   state.win = vim.api.nvim_open_win(state.buf, true, {
     relative = 'editor',
@@ -89,18 +135,21 @@ local function open_window()
 end
 
 --- Open Codex in a side-panel (vertical split) instead of floating window
-local function open_panel()
+local function open_panel(open_opts)
   -- Create a vertical split on the right and show the buffer
   vim.cmd('vertical rightbelow vsplit')
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, state.buf)
   -- Adjust width according to config (percentage of total columns)
-  local width = math.floor(vim.o.columns * config.width)
+  local width = math.floor(vim.o.columns * open_opts.width)
   vim.api.nvim_win_set_width(win, width)
   state.win = win
 end
 
-function M.open()
+function M.open(opts)
+  local open_opts = resolve_open_opts(opts)
+  local target_panel = open_opts.panel
+
   local function create_clean_buf()
     local buf = vim.api.nvim_create_buf(false, false)
 
@@ -120,8 +169,13 @@ function M.open()
   end
 
   if state.win and vim.api.nvim_win_is_valid(state.win) then
-    vim.api.nvim_set_current_win(state.win)
-    return
+    if state.layout == target_panel then
+      vim.api.nvim_set_current_win(state.win)
+      return
+    end
+
+    vim.api.nvim_win_close(state.win, true)
+    state.win = nil
   end
 
   local check_cmd = type(config.cmd) == 'string' and not config.cmd:find '%s' and config.cmd or (type(config.cmd) == 'table' and config.cmd[1]) or nil
@@ -130,7 +184,7 @@ function M.open()
     if config.autoinstall then
       installer.prompt_autoinstall(function(success)
         if success then
-          M.open() -- Try again after installing
+          M.open(open_opts) -- Try again after installing
         else
           -- Show failure message *after* buffer is created
           if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
@@ -142,7 +196,8 @@ function M.open()
             'You can install manually with:',
             '  npm install -g @openai/codex',
           })
-          if config.panel then open_panel() else open_window() end
+          if target_panel then open_panel(open_opts) else open_window(open_opts) end
+          state.layout = target_panel
         end
       end)
       return
@@ -159,7 +214,8 @@ function M.open()
         '',
         'Or enable autoinstall in setup: require("codex").setup{ autoinstall = true }',
       })
-      if config.panel then open_panel() else open_window() end
+      if target_panel then open_panel(open_opts) else open_window(open_opts) end
+      state.layout = target_panel
       return
     end
   end
@@ -172,7 +228,8 @@ function M.open()
     state.buf = create_clean_buf()
   end
 
-  if config.panel then open_panel() else open_window() end
+  if target_panel then open_panel(open_opts) else open_window(open_opts) end
+  state.layout = target_panel
 
   if not state.job then
     -- assemble command
@@ -227,13 +284,21 @@ function M.close()
     vim.api.nvim_win_close(state.win, true)
   end
   state.win = nil
+  state.layout = nil
 end
 
-function M.toggle()
+function M.toggle(opts)
+  local open_opts = resolve_open_opts(opts)
+  local target_panel = open_opts.panel
+
   if state.win and vim.api.nvim_win_is_valid(state.win) then
-    M.close()
+    if state.layout == target_panel then
+      M.close()
+    else
+      M.open(open_opts)
+    end
   else
-    M.open()
+    M.open(open_opts)
   end
 end
 
